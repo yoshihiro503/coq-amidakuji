@@ -68,6 +68,13 @@ Module List.
     FinFun.Full all -> incl xs all.
   Proof. intros full x xin. apply full. Qed.
 
+  Fixpoint filter_dec {A:Type} {P : A -> Prop} (fdec: forall x, {P x}+{~P x}) (xs : list A) :=
+    match xs with
+    | [] => []
+    | x :: xs => if fdec x then x :: filter_dec fdec xs
+                else filter_dec fdec xs
+    end.
+
   Fixpoint find_map {A B: Type} (f: A -> option B) (xs : list A) : option B :=
     match xs with
     | [] => None
@@ -96,13 +103,6 @@ Module List.
     - now apply IHxs.
   Qed.
 
-  (*Lemma find_mapP {A B:Type} {P: A -> Prop} x (f: forall x, dec (P x)) xs :
-    find_map f xs = Some y -> P x.
-Proof.
-  induction xs; [now simpl|].
-  simpl. destruct (f a); [now injection 1 as e; subst|].
-  apply IHxs.
-Qed.*)
 
   Lemma NoDup_app {A:Type} (xs ys: list A) (x y : A) :
     NoDup (xs ++ ys) -> In x xs -> In y ys -> x <> y.
@@ -112,13 +112,6 @@ Qed.*)
     - intro xy. subst. elim nin. apply in_or_app. now right.
     - now apply IHxs.
   Qed.
-
-(*  Lemma NoDup_app_l {A:Type} (xs ys: list A):
-    NoDup (xs ++ ys) ->
-    NoDup xs /\ (forall x, In x xs -> ~In x ys).
-  Proof.
-
-  Qed.*)
 
   Definition max_nat (xs : list nat) :=
     fold_left (fun sum x => x + sum) xs 0.
@@ -203,6 +196,9 @@ Module Fin.
   Definition lt_dec (x y: Fin.t size) : {x < y} + {~x < y}.
     now destruct (lt_dec (to_nat x) (to_nat y)); [left|right].
   Defined.
+
+  Lemma lt_le_incl n m: (n < m) -> (n <= m).
+  Proof. now apply Nat.lt_le_incl. Qed.
 
   Lemma lt_to_nat x y: x < y -> (to_nat x < to_nat y)%nat.
   Proof. now auto. Qed.

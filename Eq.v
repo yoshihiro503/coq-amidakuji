@@ -47,6 +47,22 @@ Defined.
 Canonical list_eqDec (eqA: eqDec) : eqDec :=
   @Pack (list eqA.(sort)) (list_dec eqA).
 
+Definition option_dec (eqA : eqDec) (x y: option eqA.(sort)) : dec (x = y).
+  refine (match x, y with
+          | None, None => left _
+          | Some a, Some b => if a =? b then left _
+                              else right _
+          | Some _, None => right _
+          | None, Some _ => right _
+          end); try discriminate.
+  - now rewrite e.
+  - now injection 1.
+  - now auto.
+Defined.
+
+Canonical option_eqDec (eqA : eqDec) : eqDec :=
+  @Pack (option eqA.(sort)) (option_dec eqA).
+
 (*Require Import List.
 Import ListNotations.
 Check [1;2;3] =? [4;5]. *)

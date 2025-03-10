@@ -11,7 +11,9 @@ Import ListNotations.
 Parameter height_ : nat.
 Definition Pos := Pos.t height_.
 Definition Bypath := (Pos * Pos)%type.
-Definition vmax_: list Bypath -> Kuji -> nat. Admitted.
+Definition vmax_ (b: list Bypath) kuji : nat :=
+  let '(ps1, ps2) := List.split b in
+  List.length (List.filter_dec (fun pos => fst pos =? kuji) (ps1 ++ ps2)).
 
 Inductive PosIn (pos: Pos) : list Bypath -> Prop :=
 | InLeft  : forall other bs, PosIn pos ((pos, other) :: bs)
@@ -22,16 +24,19 @@ Lemma PosIn_In pos body:
   PosIn pos body -> exists pos', In (pos, pos') body \/ In (pos', pos) body.
 Proof.
   induction 1; try exists other; [left|right|].
-constructor.
-constructor.
-Admitted.
+  - now constructor.
+  - now constructor.
+  - destruct IHPosIn as [pos' [left | right]]; exists pos'.
+    + now left; right.
+    + now right; right.
+Qed.
 
 
 Definition AmidaP (bs: list Bypath): Prop :=
   (* 同じPosは2回現れない *)
   (let '(ps1, ps2) := split bs in NoDup (ps1 ++ ps2))
   (* 各くじで節のmaxがあって、全部の節が含まれる *)
-  /\ forall kuji i, Fin.le i (vpos_of_nat height_ (vmax_ bs kuji)) ->
+  /\ forall kuji i, Fin.lt i (vpos_of_nat height_ (vmax_ bs kuji)) ->
                 PosIn (kuji, i) bs.
 
 Definition Amida := {bs : list Bypath | AmidaP bs}.
@@ -47,19 +52,7 @@ Section Amida.
 Variable amida : Amida. (* あみだくじを一つ固定 *)
 Notation body := (proj1_sig amida).
 
-Definition vmax (kuji: Kuji): vpos height_ :=
-  vpos_of_nat _ (vmax_ body kuji).
-(*Lemma amida_body_neq p1 p2: In (p1, p2) body -> p1 <> p2.
-Proof.
-  destruct amida as [body [nodup ex]]. simpl.
-  case_eq (split body). intros ps1 ps2 splitb.
-  rewrite splitb in nodup. intros inp p12.
-  pose (in_split_l _ _ inp) as in1. rewrite splitb in in1.
-  pose (in_split_r _ _ inp) as in2. rewrite splitb in in2.
-  simpl in *.
-  destruct (List.NoDup_app_l _ _ nodup) as [nodup1 nin2].
-  apply nin2 in in1. now subst p2.
-Qed.*)
+Definition vmax (kuji: Kuji): vpos height_ := vpos_of_nat _ (vmax_ body kuji).
 
 Lemma in_split {A:Type} pairs (x y:A) xs ys:
   In (x, y) pairs -> split pairs = (xs, ys) -> In x xs /\ In y ys.
@@ -82,7 +75,16 @@ Proof.
 Qed.
 
 Lemma amida_body_notIn_l p1 p2 r:
-  In (p1, p2) body -> ~ In (p2, r) body. Admitted.
+  In (p1, p2) body -> ~ In (p2, r) body.
+Proof.
+  destruct amida as [body [nodup ex]]. simpl.
+  case_eq (split body). intros ps1 ps2 splitb. rewrite splitb in nodup.
+  intros in1 in2.
+  destruct (in_split _ _ _ ps1 ps2 in1 splitb) as [inp1 inp2].
+  destruct (in_split _ _ _ ps1 ps2 in2 splitb) as [inp2' inr].
+  now destruct (List.NoDup_app _ _ nodup inp2' inp2) .
+Qed.
+
 Lemma amida_body_inj_r p1 p2 p2':
   In (p1, p2) body -> In (p1, p2') body -> p2 = p2'.
 Proof.
@@ -106,10 +108,29 @@ Proof.
 Qed.
 
 Lemma amida_body_inj_l p1 p2 p1':
-  In (p1, p2) body -> In (p1', p2) body -> p1 = p1'. Admitted.
+  In (p1, p2) body -> In (p1', p2) body -> p1 = p1'.
+Proof.
+  intros inp inp'.
+  destruct (In_nth _ _ (Pos.err _, Pos.err _) inp) as [i [lti nthi]].
+  destruct (In_nth _ _ (Pos.err _, Pos.err _) inp') as [j [ltj nthj]].
+  destruct amida as [body [nodup ex]]. simpl in *.
+  rewrite split_nth in nthi. injection nthi.
+  rewrite split_nth in nthj. injection nthj.
+  intros  nthj_p2 nthj_p1' nthi_p2 nthi_p1.
+  rewrite <- split_length_r in lti.
+  rewrite <- split_length_r in ltj.
+  rewrite <- nthi_p1, <- nthj_p1'. f_equal.
+  case_eq (split body). intros ps1 ps2 splitb. rewrite splitb in *.
+  destruct (in_split _ _ _ ps1 ps2 inp splitb) as [inp1 inp2].
+  destruct (in_split _ _ _ ps1 ps2 inp' splitb) as [inp1' _].
+  apply NoDup_app_remove_l in nodup.
+  replace ps2 with (snd (split body)) in nodup; [|now rewrite splitb].
+  rewrite <- nthj_p2 in nthi_p2.
+  now apply (NoDup_nth (snd (split body)) (Pos.err _)).
+Qed.
 
 Lemma amida_body_vmax kuji i:
-  Fin.le i (vmax kuji) -> PosIn (kuji, i) body.
+  Fin.lt i (vmax kuji) -> PosIn (kuji, i) body.
 Proof.
   unfold vmax. destruct amida as [body [nodup ex]]. simpl in *. now apply ex.
 Qed.
@@ -122,10 +143,6 @@ Definition hnext_ (pos: Pos): option Pos (*全単射のはず*) :=
                     else None) (proj1_sig amida).
 Definition hnext pos := Option.value (Pos.err _) (hnext_ pos).
 
-(*Lemma hnext_In p p':
-  In (p, p') body -> hnext_ p = Some p' \/ hnext_ p' = Some p.
-Admitted.*)
-
 Lemma hnext_In_inv p p':
   hnext_ p = Some p' -> In (p, p') body \/ In (p', p) body.
 Proof.
@@ -136,7 +153,6 @@ Proof.
   - destruct (y =? p); [|discriminate].
     injection Hxy as ex. subst. now right.
 Qed.
-
 
 
 Lemma hnext_PosIn (pos: Pos) :
@@ -151,18 +167,6 @@ Proof.
     destruct (prod_cmp Kuji_eqDec (vpos_eqDec height_) pos' pos); [now auto|].
     now destruct (prod_cmp Kuji_eqDec (vpos_eqDec height_) pos pos).
 Qed.
-
-(*Lemma hnext_PosIn (pos: Pos):
-  PosIn pos body <-> hnext_ pos <> None.
-Admitted.*)
-
-(*Lemma hnext_Some kuji i:
-  Fin.le i (vmax kuji) -> hnext_ (kuji, i) <> None.
-Proof.
-  unfold body, vmax. intro lei. apply hnext_PosIn.
-  destruct amida as [body [nodup ex]]. simpl in *.
-  now apply ex.
-Qed.*)
 
 Lemma hnext_inj_aux p' p1 p2:
   hnext_ p1 = Some p' ->
@@ -190,18 +194,6 @@ Proof.
   intros e. subst p2'.
   now apply hnext_inj_aux with p1'.
 Qed.
-
-(*Lemma hnext_unfixed_aux p p':
-  hnext_ p = Some p' -> p <> p'.
-Proof.
-  intros hnextp.
-  destruct (hnext_In_inv _ _ hnextp) as [inp|inp];
-    now apply amida_body_neq in inp.
-Qed.*)
-
-(*Lemma hnext_unfixed p : PosIn p body -> hnext p <> p.
-*)
-
 
 Definition vnext '(kuji, n) : option Pos :=
   if Fin.lt_dec n (vmax kuji) then
@@ -237,33 +229,26 @@ Proof.
   now apply Fin.succ_opt_inj with x.
 Qed.
 
-(*Lemma vnext_unfixed p : vnext p <> Some p.
+Lemma vnext_not_init k p :
+  ~ vnext p = Some (init k).
 Proof.
-  destruct p as [kuji i]. unfold vnext.
-  destruct (Fin.lt_dec i (vmax kuji)) as [lti|nlti]; [|discriminate].
-  destruct (Fin.succ_opt_S i) as [si [succ_i to_nat_Si]];
-    [now apply lt_height with kuji|].
-  rewrite succ_i. simpl.
-  injection 1 as sii. subst si.
-  edestruct (Fin.neq_succ_opt_diag). exact succ_i.
-Qed.*)
+  unfold vnext. destruct p as [k' i].
+  destruct (Fin.lt_dec i (vmax k')); [|now auto].
+  case_eq (Fin.succ_opt i); [|now auto]. simpl. intros Si eSi.
+  unfold init. injection 1 as kk Si0.
+  pose (Fin.succ_opt_to_nat _ eSi). now rewrite Si0 in e.
+Qed.
 
-Definition next pos := Option.map hnext (vnext pos).
+Definition next pos :=
+  match hnext_ pos with
+  | None => None
+  | Some pos' => vnext pos'
+  end.
 
-Lemma next_not_init k p : (*TODO: これは証明できない！！！ runの作り方ミスったか *)
+Lemma next_not_init k p :
   ~ next p = Some (init k).
-Admitted.
-
-Lemma vnext_PosIn prev pos : vnext prev = Some pos -> PosIn pos body.
 Proof.
-  destruct prev as [kuji i].
-  unfold vnext.
-  destruct (Fin.lt_dec i (vmax kuji)); [|now auto].
-  edestruct (Fin.succ_opt_S) as [si [isi to_nat_S]].
-  - now eapply lt_height, l.
-  - rewrite isi. simpl. destruct pos as [k' i'].
-    injection 1 as esi ek. subst.
-    now apply amida_body_vmax, Fin.le_succ_l with i.
+  unfold next. now destruct (hnext_ p); [apply vnext_not_init |].
 Qed.
 
 
@@ -273,14 +258,10 @@ Lemma next_inj pos' pos1 pos2:
   next pos2 = Some pos' ->  pos1 = pos2.
 Proof.
   unfold next.
-  case_eq (vnext pos1); [|now auto]. intros pos1' vnext1.
-  injection 1 as hnext1.
-  case_eq (vnext pos2); [|now auto]. intros pos2' vnext2.
-  injection 1 as hnext2. apply vnext_inj with pos1'.
-  apply vnext1. rewrite vnext2. f_equal. apply hnext_inj.
-  - now apply vnext_PosIn with pos2.
-  - now apply vnext_PosIn with pos1.
-  - now rewrite hnext2.
+  case_eq (hnext_ pos1); [|now auto]. intros pos1' hnext1 vnext1.
+  case_eq (hnext_ pos2); [|now auto]. intros pos2' hnext2 vnext2.
+  apply hnext_inj_aux with pos1'; [now apply hnext1|].
+  rewrite hnext2. f_equal. now apply vnext_inj with pos'.
 Qed.
 
 Fixpoint run fuel pos : list Pos :=
@@ -309,13 +290,8 @@ Lemma run_fuel_O pos: run 0 pos = [].
 Proof. now auto. Qed.
 Lemma run_fuel_S f pos: exists tl, run (S f) pos = pos :: tl.
 Proof.
-  simpl. now destruct (next pos); [exists (run f t)| exists []].
+  simpl. now destruct (next pos); [exists (run f p)| exists []].
 Qed.
-
-(*Lemma run_fuelE pos x y fuel1 fuel2 :
-  run fuel1 pos = Some x ->
-  run fuel2 pos = Some y ->
-  fuel1 = fuel2.*)
 
 Lemma run_cons' fuel tl pos hd : run fuel pos = hd :: tl -> run fuel pos = pos :: tl.
 Proof.
@@ -342,23 +318,10 @@ Proof.
     now apply (run_cons fuel ys).
   - destruct fuel as [|fuel]; [discriminate|].
     simpl. destruct (next pos).
-    + injection 1 as posa erun. now apply IHxs with t.
+    + injection 1 as posa erun. now apply IHxs with p.
     + injection 1 as posa.
       now destruct (app_cons_not_nil _ _ _  H).
 Qed.
-
-(*Lemma run_app xs ys fuel pos:
-  run fuel pos = (xs ++ ys) -> ys <> [] ->
-  exists pos', run (fuel - length xs) pos' = ys.
-Proof.
-  revert fuel pos. induction xs; simpl; intros fuel pos.
-  - exists pos. now rewrite Nat.sub_0_r.
-  - destruct fuel as [|fuel]; [discriminate|].
-    simpl. destruct (next pos).
-    + (* run pos = pos :: run t のとき *)
-      injection 1 as epos runt. now apply IHxs with t.
-    + (* run pos = [pos] のとき *)
-*)
 
 Lemma run_nth fuel pos0 i pi:
   nth_error (run fuel pos0) i = Some pi ->
@@ -373,39 +336,10 @@ Proof.
     now apply run_cons' in erun.
   - destruct fuel as[|fuel]; [discriminate|].
     simpl. destruct (next pos0); [|now rewrite nth_error_nil].
-    intros nthi. destruct (IHi fuel t) as [ps [erun len]]; [assumption|].
+    intros nthi. destruct (IHi fuel p) as [ps [erun len]]; [assumption|].
     exists (pos0 :: ps). simpl. rewrite len. split; [| now auto].
     f_equal. now rewrite <- len, <- erun.
 Qed.
-
-(*Inductive Nexts : nat -> Pos -> Pos -> Prop := (*1回以上のnext適用*)
-| Next1 pos pos' : next pos = Some pos' -> Nexts 1 pos pos'
-| NextPlus pos' n pos pos'' : Nexts n pos pos' ->
-                              next pos' = Some pos'' ->
-                              Nexts (S n) pos pos''.
-Lemma Nexts_l pos' n pos pos'' :
-  next pos = Some pos' -> Nexts n pos' pos'' ->
-  Nexts (S n) pos pos''.
-Admitted.
-
-Lemma run_nth_Nexts fuel pos i pos':
-  i > 0 -> nth_error (run fuel pos) i = Some pos' ->
-  Nexts i pos pos'.
-Proof.
-  revert fuel pos. induction i; [inversion 1|]. intros fuel pos _.
-  destruct fuel as [|fuel]; [discriminate|].
-  simpl.
-  destruct (next pos); [|now rewrite nth_error_nil].
-
-  intros nthi.
-  eapply Nexts_l.
-  admit.
-Search nth_error nil.
-
-compute.
-unfold nth_error.
-Qed.
-Admitted.*)
 
 Definition P kuji n pos := (*initから始まるpos列*)
   exists fuel, nth_error (run fuel (init kuji)) n = Some pos.
@@ -457,19 +391,12 @@ Proof.
     injection 1 as erun'. subst right. subst i.
     rewrite Nat.sub_diag in *.
     simpl in nthi, nthSi.
-    revert nthSi. case_eq (run fuel' t); [now auto|]. intros t' tl.
+    revert nthSi. case_eq (run fuel' p); [now auto|]. intros t' tl.
     intros erun et. apply run_cons in erun. now subst.
   - (* p_i の次がないとき: nth の S i があることに矛盾 *)
     injection 1 as eright. subst right. now rewrite nth_error_nil in nthSi.
 Qed.
 
-
-(*Lemma P_S_next kuji i pos pos':
-  P kuji i pos -> P kuji (S i) pos' -> next pos = Some pos'.
-Proof.
-  intros [fuel1 nthi] [fuel2 nthSi].
-Search List.nth_error List.app.
-Qed.*)
 
 Lemma P_S' kuji i pos:
   P kuji (S i) pos -> exists prev, P kuji i prev /\ next prev = Some pos.
@@ -478,20 +405,13 @@ Proof.
   - now exists fuel.
   - now apply P_S_next with fuel (init kuji) i.
 Qed.
-(* now exists x, fuel.
-  assert (S i < length (run fuel (init kuji))).
-  - apply nth_error_Some. now rewrite nthSi.
-  - case_eq (nth_error (run fuel (init kuji)) i).
-    + intros prev nthi. exists prev. split; [now exists fuel|].
-      now apply P_S_next with kuji i; exists fuel.
-    + intros nthi. apply nth_error_None in nthi. apply Nat.lt_succ_l in H.
-      now apply Nat.le_ngt in nthi.
-Qed.*)
 
 Lemma nP_S_init kuji i: ~P kuji (S i) (init kuji).
 Proof.
-Search init.
-Admitted.
+  intros PSi. destruct (P_S' _ _ _ PSi) as [prev [Pi nextp]].
+  now elim (next_not_init _ _ nextp).
+Qed.
+
 
 Lemma unique_path_aux x kuji i j : P kuji i x -> P kuji j x -> i = j.
 Proof.
@@ -528,14 +448,32 @@ Qed.
 Parameter err : Pos.
 
 Definition Finished poss := exists pos, List.Last poss pos /\ next pos = None.
-Definition Finished_dec: forall poss, {Finished poss} + {~Finished poss}.
-Admitted.
+Definition Finished_dec poss: {Finished poss} + {~Finished poss}.
+  refine (match poss with
+          | [] => right _
+          | pos :: ps => if next (last (pos :: ps) pos) =? None then left _
+                        else right _
+          end).
+  - destruct 1 as [p [lp]]. now inversion lp.
+  - set (last (pos :: ps) pos) as l.
+    exists l. split; [|now auto].
+    now erewrite (List.lastP pos l).
+  - intros [posn [lp nxt]].
+    rewrite List.lastP in lp; [|now auto].
+    now rewrite lp in n.
+Defined.
 
 Lemma NotFinished_next fuel pos pos':
   ~Finished (run (1 + fuel) pos) ->
   next pos = Some pos' ->
   ~Finished (run fuel pos').
-Admitted.
+Proof.
+  simpl. intros nfinS extb fin.
+  rewrite extb in nfinS.
+  destruct fin as [pos_n [lposn nextn]]. destruct nfinS.
+  exists pos_n. split; [|assumption].
+  now constructor.
+Qed.
 
 Lemma length_run fuel : forall pos,
   ~ Finished (run fuel pos) -> length (run fuel pos) = fuel.

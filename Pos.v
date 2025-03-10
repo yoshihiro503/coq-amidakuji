@@ -32,6 +32,6 @@ Definition vpos_of_nat (n: nat): vpos.
   - apply Nat.lt_succ_diag_r.
 Defined.
 
-
+Definition eq_dec := Eq.prod_eqDec Kuji_eqDec vpos_eqDec.
 Parameter err : t.
 End Pos.
