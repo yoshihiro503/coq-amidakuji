@@ -1,6 +1,6 @@
--R . T
-Dec.v
-Eq.v
-Common.v
-Pos.v
-Amida.v
+-R src T
+src/Dec.v
+src/Eq.v
+src/Common.v
+src/Pos.v
+src/Amida.v
